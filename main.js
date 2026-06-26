@@ -5,16 +5,18 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_ANON_KEY
 )
 
-const notesEl = document.getElementById('notes')
-const bodyEl = document.getElementById('body')
-const submitEl = document.getElementById('submit')
-const statusEl = document.getElementById('status')
+const notesEl   = document.getElementById('notes')
+const bodyEl    = document.getElementById('body')
+const submitEl  = document.getElementById('submit')
+const statusEl  = document.getElementById('status')
+const micBtn    = document.getElementById('mic-btn')
+const micStatus = document.getElementById('mic-status')
 
-// ── Relative time ─────────────────────────────────────────────────────────────
+// ── Relative time ──────────────────────────────────────────────────────────────
 function timeAgo(dateStr) {
   const secs = Math.floor((Date.now() - new Date(dateStr)) / 1000)
-  if (secs < 60)   return 'just now'
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ago`
+  if (secs < 60)    return 'just now'
+  if (secs < 3600)  return `${Math.floor(secs / 60)}m ago`
   if (secs < 86400) return `${Math.floor(secs / 3600)}h ago`
   return `${Math.floor(secs / 86400)}d ago`
 }
@@ -27,12 +29,11 @@ const EVENT_LABEL = {
   'email.bounced':   { icon: '⚠️', label: 'bounced' },
 }
 
-// ── Render activity feed ───────────────────────────────────────────────────────
+// ── Activity feed ──────────────────────────────────────────────────────────────
 function renderActivity(noteId, events) {
   const noteEvents = events.filter(e => e.note_id === noteId)
   if (!noteEvents.length) return ''
 
-  // Group by recipient → keep only most recent event per recipient
   const byRecipient = {}
   for (const e of noteEvents) {
     if (!byRecipient[e.recipient] || new Date(e.created_at) > new Date(byRecipient[e.recipient].created_at)) {
@@ -67,7 +68,6 @@ async function loadNotes() {
     return
   }
 
-  // Fetch email activity for all notes in one query
   const noteIds = notes.map(n => n.id)
   const { data: events = [] } = await supabase
     .from('email_events')
@@ -80,19 +80,108 @@ async function loadNotes() {
       <p>${escapeHtml(note.body)}</p>
       <div class="note-footer">
         <time>${new Date(note.created_at).toLocaleString()}</time>
-        <button class="share-btn" data-note-id="${note.id}" data-body="${escapeAttr(note.body)}">Share via email</button>
+        <button class="listen-btn" data-body="${escapeAttr(note.body)}">▶ Listen</button>
+        <button class="share-btn"  data-note-id="${note.id}" data-body="${escapeAttr(note.body)}">Share via email</button>
       </div>
       <p class="share-status"></p>
       ${renderActivity(note.id, events)}
     </div>
   `).join('')
 
-  notesEl.querySelectorAll('.share-btn').forEach(btn => {
-    btn.addEventListener('click', () => handleShare(btn))
-  })
+  notesEl.querySelectorAll('.share-btn').forEach(btn  => btn.addEventListener('click', () => handleShare(btn)))
+  notesEl.querySelectorAll('.listen-btn').forEach(btn => btn.addEventListener('click', () => handleListen(btn)))
 }
 
-// ── Share handler ──────────────────────────────────────────────────────────────
+// ── Text-to-speech ─────────────────────────────────────────────────────────────
+async function handleListen(btn) {
+  const text = btn.dataset.body
+  const original = btn.textContent
+
+  btn.disabled = true
+  btn.textContent = '⏳ Loading…'
+
+  try {
+    const res = await fetch('/api/speak', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    })
+    if (!res.ok) {
+      const { error } = await res.json()
+      throw new Error(error)
+    }
+    const blob = await res.blob()
+    const url  = URL.createObjectURL(blob)
+    const audio = new Audio(url)
+    btn.textContent = '⏹ Stop'
+    btn.disabled = false
+    audio.play()
+    audio.onended = () => {
+      btn.textContent = original
+      URL.revokeObjectURL(url)
+    }
+    btn.onclick = () => {
+      audio.pause()
+      audio.currentTime = 0
+      btn.textContent = original
+      btn.onclick = () => handleListen(btn)
+    }
+  } catch (err) {
+    alert(`Listen failed: ${err.message}`)
+    btn.textContent = original
+    btn.disabled = false
+  }
+}
+
+// ── Speech-to-text ─────────────────────────────────────────────────────────────
+let mediaRecorder = null
+let audioChunks   = []
+
+micBtn.addEventListener('click', async () => {
+  if (mediaRecorder && mediaRecorder.state === 'recording') {
+    mediaRecorder.stop()
+    return
+  }
+
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+    audioChunks  = []
+    mediaRecorder = new MediaRecorder(stream)
+
+    mediaRecorder.ondataavailable = e => { if (e.data.size) audioChunks.push(e.data) }
+
+    mediaRecorder.onstop = async () => {
+      stream.getTracks().forEach(t => t.stop())
+      micBtn.textContent = '🎤'
+      micBtn.classList.remove('recording')
+      micStatus.textContent = 'Transcribing…'
+
+      const blob = new Blob(audioChunks, { type: 'audio/webm' })
+      try {
+        const res = await fetch('/api/transcribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'audio/webm' },
+          body: blob,
+        })
+        const data = await res.json()
+        if (!res.ok) throw new Error(data.error)
+        bodyEl.value = data.text
+        micStatus.textContent = ''
+      } catch (err) {
+        micStatus.textContent = `Transcription failed: ${err.message}`
+      }
+    }
+
+    mediaRecorder.start()
+    micBtn.textContent = '⏹ Stop'
+    micBtn.classList.add('recording')
+    micStatus.textContent = 'Recording… click Stop when done'
+  } catch {
+    micStatus.textContent = 'Microphone access denied'
+  }
+})
+
+// ── Share via email ────────────────────────────────────────────────────────────
 async function handleShare(btn) {
   const noteBody = btn.dataset.body
   const noteId   = btn.dataset.noteId
@@ -116,7 +205,6 @@ async function handleShare(btn) {
     if (!res.ok) throw new Error(json.error ?? 'Unknown error')
     shareStatus.textContent = `Sent to ${email}!`
     shareStatus.style.color = '#090'
-    // Reload notes to show the new "sent" event in the activity feed
     await loadNotes()
   } catch (err) {
     shareStatus.textContent = `Failed: ${err.message}`
@@ -153,7 +241,6 @@ submitEl.addEventListener('click', async () => {
 function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
-
 function escapeAttr(str) {
   return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }

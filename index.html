@@ -8,30 +8,49 @@
     body { font-family: sans-serif; max-width: 640px; margin: 48px auto; padding: 0 16px; }
     h1 { font-size: 1.5rem; margin-bottom: 24px; }
     textarea { width: 100%; box-sizing: border-box; padding: 10px; font-size: 1rem; border: 1px solid #ccc; border-radius: 6px; resize: vertical; min-height: 80px; }
-    button { margin-top: 8px; padding: 10px 20px; font-size: 1rem; background: #111; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
-    button:disabled { opacity: 0.5; cursor: default; }
+
+    /* Compose row */
+    .compose-actions { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+    #submit { padding: 10px 20px; font-size: 1rem; background: #111; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+    #submit:disabled { opacity: 0.5; cursor: default; }
+    #mic-btn { padding: 10px 14px; font-size: 1rem; background: #fff; color: #111; border: 1px solid #ccc; border-radius: 6px; cursor: pointer; transition: background 0.2s; }
+    #mic-btn.recording { background: #fee; border-color: #c00; color: #c00; }
+    #mic-status { font-size: 0.85rem; color: #777; }
+    #status { margin-top: 6px; font-size: 0.9rem; color: #555; min-height: 1.2em; }
+
+    /* Notes */
     #notes { margin-top: 40px; }
     .note { border-bottom: 1px solid #eee; padding: 12px 0; }
-    .note p { margin: 0 0 4px; }
-    .note-footer { display: flex; align-items: center; gap: 12px; margin-top: 4px; }
-    .note time { font-size: 0.8rem; color: #999; }
-    .share-btn { font-size: 0.8rem; padding: 3px 10px; background: none; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; color: #555; }
-    .share-btn:hover { border-color: #111; color: #111; }
-    .share-btn:disabled { opacity: 0.5; cursor: default; }
-    .share-status { font-size: 0.8rem; margin: 2px 0 0; }
+    .note > p { margin: 0 0 4px; }
+    .note-footer { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+    .note time { font-size: 0.8rem; color: #999; margin-right: auto; }
+
+    /* Note action buttons */
+    .listen-btn, .share-btn {
+      font-size: 0.78rem; padding: 3px 10px; background: none;
+      border: 1px solid #ccc; border-radius: 4px; cursor: pointer; color: #555; margin-top: 0;
+    }
+    .listen-btn:hover, .share-btn:hover { border-color: #111; color: #111; }
+    .listen-btn:disabled, .share-btn:disabled { opacity: 0.5; cursor: default; }
+    .share-status { font-size: 0.8rem; margin: 2px 0 0; width: 100%; }
+
+    /* Activity feed */
     .activity-feed { list-style: none; margin: 10px 0 0; padding: 0; border-top: 1px dashed #eee; padding-top: 8px; }
     .activity-row { font-size: 0.78rem; color: #555; padding: 3px 0; display: flex; gap: 6px; align-items: baseline; }
     .activity-recipient { color: #333; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 200px; }
     .activity-status { color: #777; }
     .activity-time { color: #bbb; margin-left: auto; white-space: nowrap; }
-    #status { margin-top: 8px; font-size: 0.9rem; color: #555; min-height: 1.2em; }
   </style>
 </head>
 <body>
   <h1>Pioneer Notes</h1>
 
-  <textarea id="body" placeholder="Write a note…"></textarea>
-  <button id="submit">Post note</button>
+  <textarea id="body" placeholder="Write a note… or use the mic 🎤"></textarea>
+  <div class="compose-actions">
+    <button id="submit">Post note</button>
+    <button id="mic-btn" title="Speak a note">🎤</button>
+    <span id="mic-status"></span>
+  </div>
   <p id="status"></p>
 
   <div id="notes"></div>
