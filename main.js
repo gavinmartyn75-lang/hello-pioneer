@@ -27,11 +27,50 @@ async function loadNotes() {
   }
 
   notesEl.innerHTML = data.map(note => `
-    <div class="note">
+    <div class="note" data-id="${note.id}">
       <p>${escapeHtml(note.body)}</p>
-      <time>${new Date(note.created_at).toLocaleString()}</time>
+      <div class="note-footer">
+        <time>${new Date(note.created_at).toLocaleString()}</time>
+        <button class="share-btn" data-body="${escapeAttr(note.body)}">Share via email</button>
+      </div>
+      <p class="share-status"></p>
     </div>
   `).join('')
+
+  notesEl.querySelectorAll('.share-btn').forEach(btn => {
+    btn.addEventListener('click', () => handleShare(btn))
+  })
+}
+
+async function handleShare(btn) {
+  const noteBody = btn.dataset.body
+  const email = window.prompt('Enter recipient email address:')
+  if (!email) return
+
+  const noteEl = btn.closest('.note')
+  const shareStatus = noteEl.querySelector('.share-status')
+
+  btn.disabled = true
+  shareStatus.textContent = 'Sending…'
+  shareStatus.style.color = '#555'
+
+  try {
+    const res = await fetch('/api/send-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ noteBody, recipientEmail: email }),
+    })
+    const json = await res.json()
+    if (!res.ok) throw new Error(json.error ?? 'Unknown error')
+    shareStatus.textContent = `Sent to ${email}!`
+    shareStatus.style.color = '#090'
+  } catch (err) {
+    shareStatus.textContent = `Failed: ${err.message}`
+    shareStatus.style.color = 'red'
+  } finally {
+    btn.disabled = false
+    setTimeout(() => { shareStatus.textContent = '' }, 4000)
+  }
 }
 
 submitEl.addEventListener('click', async () => {
@@ -56,7 +95,11 @@ submitEl.addEventListener('click', async () => {
 })
 
 function escapeHtml(str) {
-  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+  return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+function escapeAttr(str) {
+  return str.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 }
 
 loadNotes()
