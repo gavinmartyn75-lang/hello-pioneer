@@ -1,6 +1,8 @@
 import { Resend } from 'resend'
+import { createClient } from '@supabase/supabase-js'
 
 const resend = new Resend(process.env.RESEND_API_KEY)
+const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY)
 
 const APP_URL = 'https://hello-pioneer-red-six.vercel.app'
 
@@ -14,10 +16,10 @@ export default async function handler(req, res) {
     try { body = JSON.parse(body) } catch { body = {} }
   }
 
-  const { noteBody, recipientEmail } = body ?? {}
+  const { noteBody, noteId, recipientEmail } = body ?? {}
 
-  if (!noteBody || !recipientEmail) {
-    return res.status(400).json({ error: 'noteBody and recipientEmail are required' })
+  if (!noteBody || !noteId || !recipientEmail) {
+    return res.status(400).json({ error: 'noteBody, noteId, and recipientEmail are required' })
   }
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -38,26 +40,22 @@ export default async function handler(req, res) {
     <tr>
       <td align="center">
         <table width="560" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,0.08);">
-          <!-- Header -->
           <tr>
             <td style="background:#111111;padding:28px 40px;">
               <p style="margin:0;font-size:20px;font-weight:600;color:#ffffff;letter-spacing:-0.3px;">Pioneer Notes</p>
             </td>
           </tr>
-          <!-- Body -->
           <tr>
             <td style="padding:36px 40px 28px;">
               <p style="margin:0 0 20px;font-size:13px;color:#999;text-transform:uppercase;letter-spacing:0.8px;">Someone shared a note with you</p>
               <p style="margin:0;font-size:17px;line-height:1.65;color:#111;white-space:pre-wrap;">${escapeHtml(noteBody)}</p>
             </td>
           </tr>
-          <!-- Divider -->
           <tr>
             <td style="padding:0 40px;">
               <hr style="border:none;border-top:1px solid #eee;margin:0;">
             </td>
           </tr>
-          <!-- Footer -->
           <tr>
             <td style="padding:24px 40px 36px;">
               <a href="${APP_URL}" style="display:inline-block;background:#111;color:#fff;text-decoration:none;padding:12px 22px;border-radius:6px;font-size:14px;font-weight:500;">View all notes →</a>
@@ -71,18 +69,27 @@ export default async function handler(req, res) {
 </body>
 </html>`
 
-  const { error } = await resend.emails.send({
+  const { data: emailData, error: sendError } = await resend.emails.send({
     from: 'Pioneer Notes <onboarding@resend.dev>',
     to: recipientEmail,
     subject: 'Someone shared a note with you',
     html,
+    tags: [{ name: 'note_id', value: noteId }],
   })
 
-  if (error) {
-    return res.status(500).json({ error: error.message })
+  if (sendError) {
+    return res.status(500).json({ error: sendError.message })
   }
 
-  return res.status(200).json({ ok: true })
+  // Record the sent event — best-effort, don't fail the request if this errors
+  await supabase.from('email_events').insert({
+    message_id: emailData.id,
+    note_id: noteId,
+    recipient: recipientEmail,
+    event_type: 'sent',
+  })
+
+  return res.status(200).json({ ok: true, messageId: emailData.id })
 }
 
 function escapeHtml(str) {
